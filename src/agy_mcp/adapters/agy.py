@@ -275,6 +275,26 @@ class AgyPrintBackend(BaseAdapter):
             f"--print={self._prepare_prompt(request.prompt)}",
         ]
 
+        # Metadata alone does not select a model. Keep caller-supplied model
+        # values fused for the same flag-injection protection as --print.
+        if request.model:
+            if not has_flag(cap.raw_help or "", "--model"):
+                raise RuntimeError(
+                    "Installed agy does not advertise --model; "
+                    "refusing to ignore the requested model."
+                )
+            argv.append(f"--model={request.model}")
+
+        # Explicit write authorization enables native file edits only; do not
+        # bypass tool permissions or remove the caller's sandbox.
+        if request.mode == "execute" and request.allow_write:
+            if not has_flag(cap.raw_help or "", "--mode"):
+                raise RuntimeError(
+                    "Installed agy does not advertise --mode; "
+                    "cannot select accept-edits safely."
+                )
+            argv.append("--mode=accept-edits")
+
         if cap.supports_print_timeout:
             # Reserve wrapper-side grace for klog drain + child cleanup.
             inner_timeout = max(30, request.timeout - 30)

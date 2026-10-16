@@ -96,6 +96,71 @@ def test_build_command_resumes_with_conversation_id(tmp_path, isolated_agy):
     assert "--conversation=conv-existing-123" in argv
 
 
+def _modern_backend(monkeypatch, *, raw_help="--print --model --mode"):
+    from agy_mcp.models import Capability
+
+    backend = AgyPrintBackend()
+    cap = Capability(
+        backend="agy", bin_path="/approved/agy", supports_print=True,
+        supports_sandbox=True, supports_conversation=True, raw_help=raw_help,
+    )
+    monkeypatch.setattr(backend, "detect", lambda: cap)
+    return backend
+
+
+@pytest.mark.parametrize("model", ["gemini-3.8-flash-high", "--dangerously-skip-permissions"])
+@pytest.mark.parametrize("session_id", [None, "existing-conversation"])
+def test_build_command_forwards_fused_model(monkeypatch, model, session_id):
+    backend = _modern_backend(monkeypatch)
+    request = BridgeRequest(
+        prompt="hello", model=model, session_id=session_id, sandbox=True,
+    )
+    argv = backend.build_command(request, log_path=None)
+    assert f"--model={model}" in argv
+    assert "--model" not in argv
+    assert "--dangerously-skip-permissions" not in argv
+    assert ("--conversation=existing-conversation" in argv) == bool(session_id)
+    assert "--sandbox" in argv
+
+
+@pytest.mark.parametrize("raw_help", [None, "--print", "--print --model-name"])
+def test_build_command_refuses_to_silently_ignore_model(monkeypatch, raw_help):
+    backend = _modern_backend(monkeypatch, raw_help=raw_help)
+    with pytest.raises(RuntimeError, match="refusing to ignore the requested model"):
+        backend.build_command(BridgeRequest(prompt="hello", model="chosen"), log_path=None)
+
+
+def test_build_command_without_model_support_preserves_default(monkeypatch):
+    backend = _modern_backend(monkeypatch, raw_help="--print")
+    argv = backend.build_command(BridgeRequest(prompt="hello"), log_path=None)
+    assert not any(arg.startswith("--model") for arg in argv)
+
+
+@pytest.mark.parametrize("mode", ["ask", "plan", "prototype", "review", "execute", "browser", "long"])
+@pytest.mark.parametrize("allow_write", [False, True])
+def test_build_command_grants_file_edits_only_for_authorized_execute(monkeypatch, mode, allow_write):
+    backend = _modern_backend(monkeypatch)
+    request = BridgeRequest(
+        prompt="hello", mode=mode, allow_write=allow_write, sandbox=True,
+    )
+    argv = backend.build_command(request, log_path=None)
+    expected_modes = ["--mode=accept-edits"] if mode == "execute" and allow_write else []
+    assert [arg for arg in argv if arg.startswith("--mode")] == expected_modes
+    assert "--sandbox" in argv
+    assert "--dangerously-skip-permissions" not in argv
+
+
+@pytest.mark.parametrize("raw_help", [None, "--print", "--print --mode-name"])
+def test_build_command_refuses_unsupported_file_edit_mode(monkeypatch, raw_help):
+    backend = _modern_backend(monkeypatch, raw_help=raw_help)
+    request = BridgeRequest(prompt="hello", mode="execute", allow_write=True)
+    with pytest.raises(RuntimeError, match="cannot select accept-edits safely"):
+        backend.build_command(request, log_path=None)
+    # An older CLI still handles read-only requests without --mode.
+    readonly = request.model_copy(update={"mode": "review", "allow_write": False})
+    assert not any(arg.startswith("--mode") for arg in backend.build_command(readonly, log_path=None))
+
+
 def test_build_command_resists_flag_prompt_injection(tmp_path, isolated_agy):
     """Phase 3 R1 / H1 regression: hostile prompt starting with -- must not
     peel off as a fresh flag in argv."""

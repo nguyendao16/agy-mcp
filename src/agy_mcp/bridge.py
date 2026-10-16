@@ -95,7 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default=None,
                    help=(
                        "Optional model override for backends that support "
-                       "model flags (currently gemini)."
+                       "model flags (agy and gemini)."
                    ))
     p.add_argument("--sandbox", action="store_true",
                    help="Pass --sandbox to the underlying CLI when supported.")

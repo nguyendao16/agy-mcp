@@ -2,6 +2,29 @@
 
 > Re-run the probe whenever `agy` is updated; capability detections are cached per adapter instance.
 
+## CLI 1.4.0 compatibility (local probe, 2026-10-17)
+
+The installed CLI now advertises `--model` and `--mode`. The adapter forwards
+an explicit request model as one argv element, `--model=<model>`, including
+when resuming a conversation. `execute` with `allow_write=True` selects
+`--mode=accept-edits` for native file edits. Other requests do not receive
+this edit mode. The caller's `--sandbox` flag is retained; the adapter does
+not add `--dangerously-skip-permissions`.
+
+Both flags are checked against the installed binary's help. An explicit
+model or authorized execute request fails before spawning if its required
+flag is absent, rather than silently using a default model or edit policy.
+Requests without either option remain compatible with the older baseline
+below. Response model metadata describes the request or discovered setting;
+use the actual CLI argv and klog to verify model selection during a live check.
+
+Live MCP stdio checks passed for both the installed patched 0.1.9 bridge and
+this workspace source: doctor healthy, synchronous read-only file access,
+and a detached authorized write in a temporary workspace. The output file
+matched the expected content and no other workspace files changed. The CLI
+klog recorded `model="gemini-3.8-flash-high"` and `applying agent mode
+accept-edits` on the resumed write turn, which completed with exit code 0.
+
 ## Confirmed flags — local `agy --help` (v1.0.0, probed via `$(command -v agy)`, 2026-05-20)
 
 This table is the wrapper's local compatibility baseline, not a claim
